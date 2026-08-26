@@ -1,0 +1,6 @@
+{
+  "name": "NyxTap",
+  "description": "NyxTap - Everything you need. One tap away. Fast temporary email inbox with automatic OTP extraction and floating 2FA TOTP authenticator.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
