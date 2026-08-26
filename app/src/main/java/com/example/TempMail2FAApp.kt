@@ -11,6 +11,7 @@ import com.example.data.repository.MailRepository
 import com.example.data.repository.NameRepository
 import com.example.data.repository.SettingsRepository
 import com.example.data.repository.TwoFaRepository
+import com.example.data.repository.UpdateRepository
 import com.example.util.AppClipboardManager
 
 class TempMail2FAApp : Application() {
@@ -25,6 +26,8 @@ class TempMail2FAApp : Application() {
         private set
     lateinit var settingsRepository: SettingsRepository
         private set
+    lateinit var updateRepository: UpdateRepository
+        private set
     lateinit var database: AppDatabase
         private set
 
@@ -34,6 +37,7 @@ class TempMail2FAApp : Application() {
 
         clipboardManager = AppClipboardManager(this)
         settingsRepository = SettingsRepository(this)
+        updateRepository = UpdateRepository(this, settingsRepository)
         database = AppDatabase.getDatabase(this)
         mailRepository = MailRepository(this, AhemMailProvider(), clipboardManager)
         twoFaRepository = TwoFaRepository(this, clipboardManager)

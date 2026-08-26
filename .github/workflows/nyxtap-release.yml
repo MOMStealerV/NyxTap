@@ -1,0 +1,203 @@
+name: NyxTap Automated Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_version:
+        description: 'Release version (e.g. v30.2). If blank, detected from app/build.gradle.kts'
+        required: false
+        type: string
+        default: ''
+      release_notes:
+        description: 'Release notes / changelog (optional)'
+        required: false
+        type: string
+        default: |
+          - Performance and reliability optimizations
+          - In-app updater enhancements
+          - Bug fixes and UI refinements
+      prerelease:
+        description: 'Mark as pre-release / beta'
+        required: false
+        type: boolean
+        default: false
+  push:
+    tags:
+      - 'v*'
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-release:
+    name: Build, Test & Publish Release
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Setup Keystore
+        run: |
+          if [ -f "debug.keystore.base64" ]; then
+            base64 -d debug.keystore.base64 > debug.keystore
+            echo "Keystore decoded successfully from debug.keystore.base64."
+          elif [ ! -f "debug.keystore" ]; then
+            keytool -genkey -v -keystore debug.keystore -alias androiddebugkey -keyalg RSA -keysize 2048 -validity 10000 -storepass android -keypass android -dname "CN=Android Debug,O=Android,C=US"
+            echo "Generated fallback debug keystore."
+          fi
+
+      - name: Extract App Version Information
+        id: version_info
+        run: |
+          # Parse versionName and versionCode from app/build.gradle.kts
+          APP_VERSION_NAME=$(grep -oE 'versionName\s*=\s*"[^"]+"' app/build.gradle.kts | head -1 | sed -E 's/versionName\s*=\s*"([^"]+)"/\1/')
+          APP_VERSION_CODE=$(grep -oE 'versionCode\s*=\s*[0-9]+' app/build.gradle.kts | head -1 | sed -E 's/versionCode\s*=\s*([0-9]+)/\1/')
+
+          if [ -z "$APP_VERSION_NAME" ] || [ -z "$APP_VERSION_CODE" ]; then
+            echo "::error::Failed to extract version information from app/build.gradle.kts"
+            exit 1
+          fi
+
+          # Standardize tag prefix
+          if [[ "$APP_VERSION_NAME" =~ ^v ]]; then
+            APP_RELEASE_TAG="$APP_VERSION_NAME"
+          else
+            APP_RELEASE_TAG="v$APP_VERSION_NAME"
+          fi
+
+          INPUT_VERSION="${{ github.event.inputs.release_version }}"
+          if [ -n "$INPUT_VERSION" ]; then
+            if [[ "$INPUT_VERSION" =~ ^v ]]; then
+              REQUESTED_TAG="$INPUT_VERSION"
+            else
+              REQUESTED_TAG="v$INPUT_VERSION"
+            fi
+
+            if [ "$REQUESTED_TAG" != "$APP_RELEASE_TAG" ]; then
+              echo "::error::Requested release version ($INPUT_VERSION) does not match app versionName ($APP_VERSION_NAME)!"
+              exit 1
+            fi
+            FINAL_RELEASE_TAG="$REQUESTED_TAG"
+          else
+            FINAL_RELEASE_TAG="$APP_RELEASE_TAG"
+          fi
+
+          echo "App Version Name: $APP_VERSION_NAME"
+          echo "App Version Code: $APP_VERSION_CODE"
+          echo "Release Tag: $FINAL_RELEASE_TAG"
+
+          echo "version_name=$APP_VERSION_NAME" >> "$GITHUB_OUTPUT"
+          echo "version_code=$APP_VERSION_CODE" >> "$GITHUB_OUTPUT"
+          echo "release_tag=$FINAL_RELEASE_TAG" >> "$GITHUB_OUTPUT"
+
+      - name: Run Unit Tests
+        run: |
+          if [ ! -f "./gradlew" ]; then
+            gradle wrapper --gradle-version 9.3.1
+          fi
+          chmod +x ./gradlew
+          ./gradlew testDebugUnitTest --no-daemon --stacktrace
+
+      - name: Build Android APK
+        run: |
+          ./gradlew assembleDebug --no-daemon --stacktrace
+
+      - name: Verify and Prepare Release Assets
+        id: prepare_assets
+        run: |
+          RELEASE_TAG="${{ steps.version_info.outputs.release_tag }}"
+          APK_NAME="NyxTap-${RELEASE_TAG}.apk"
+          SHA_NAME="NyxTap-${RELEASE_TAG}.apk.sha256"
+
+          # Locate built APK
+          FOUND_APK=$(find app/build/outputs/apk -name "*.apk" | head -n 1)
+          if [ -z "$FOUND_APK" ] || [ ! -f "$FOUND_APK" ]; then
+            echo "::error::Built APK was not found in app/build/outputs/apk!"
+            exit 1
+          fi
+
+          echo "Found APK at: $FOUND_APK"
+          cp "$FOUND_APK" "$APK_NAME"
+
+          if [ ! -s "$APK_NAME" ]; then
+            echo "::error::Prepared APK file is empty or missing!"
+            exit 1
+          fi
+
+          # Compute SHA-256 Checksum
+          APK_SHA256=$(sha256sum "$APK_NAME" | awk '{print $1}')
+          APK_SIZE_BYTES=$(stat -c%s "$APK_NAME" 2>/dev/null || stat -f%z "$APK_NAME")
+
+          echo "$APK_SHA256  $APK_NAME" > "$SHA_NAME"
+
+          echo "APK File: $APK_NAME ($APK_SIZE_BYTES bytes)"
+          echo "APK SHA-256: $APK_SHA256"
+
+          echo "apk_name=$APK_NAME" >> "$GITHUB_OUTPUT"
+          echo "apk_path=$APK_NAME" >> "$GITHUB_OUTPUT"
+          echo "sha_path=$SHA_NAME" >> "$GITHUB_OUTPUT"
+          echo "apk_sha256=$APK_SHA256" >> "$GITHUB_OUTPUT"
+
+      - name: Generate Release Body
+        id: release_body
+        run: |
+          RELEASE_TAG="${{ steps.version_info.outputs.release_tag }}"
+          VERSION_CODE="${{ steps.version_info.outputs.version_code }}"
+          APK_NAME="${{ steps.prepare_assets.outputs.apk_name }}"
+          APK_SHA256="${{ steps.prepare_assets.outputs.apk_sha256 }}"
+          CUSTOM_NOTES="${{ github.event.inputs.release_notes }}"
+
+          {
+            echo "## NyxTap $RELEASE_TAG"
+            echo ""
+            echo "**versionCode:** \`$VERSION_CODE\`"
+            echo ""
+            if [ -n "$CUSTOM_NOTES" ]; then
+              echo "### Changes"
+              echo "$CUSTOM_NOTES"
+              echo ""
+            else
+              echo "### Changes"
+              echo "- Performance and reliability optimizations"
+              echo "- In-app updater enhancements"
+              echo "- Bug fixes and UI refinements"
+              echo ""
+            fi
+            echo "---"
+            echo "### Package Verification"
+            echo "- **Asset:** \`$APK_NAME\`"
+            echo "- **SHA-256:** \`$APK_SHA256\`"
+          } > release_notes.md
+
+          cat release_notes.md
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.version_info.outputs.release_tag }}
+          name: NyxTap ${{ steps.version_info.outputs.release_tag }}
+          body_path: release_notes.md
+          files: |
+            ${{ steps.prepare_assets.outputs.apk_path }}
+            ${{ steps.prepare_assets.outputs.sha_path }}
+          draft: false
+          prerelease: ${{ github.event.inputs.prerelease || false }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

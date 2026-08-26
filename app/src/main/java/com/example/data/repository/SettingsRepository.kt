@@ -38,6 +38,15 @@ class SettingsRepository(context: Context) {
     private val _autoCopyTwoFa = MutableStateFlow(prefs.getBoolean(KEY_AUTO_COPY_2FA, true))
     val autoCopyTwoFa: StateFlow<Boolean> = _autoCopyTwoFa.asStateFlow()
 
+    private val _autoCheckUpdates = MutableStateFlow(prefs.getBoolean(KEY_AUTO_CHECK_UPDATES, true))
+    val autoCheckUpdates: StateFlow<Boolean> = _autoCheckUpdates.asStateFlow()
+
+    private val _includeBetaUpdates = MutableStateFlow(prefs.getBoolean(KEY_INCLUDE_BETA_UPDATES, false))
+    val includeBetaUpdates: StateFlow<Boolean> = _includeBetaUpdates.asStateFlow()
+
+    private val _lastUpdateCheckTimestamp = MutableStateFlow(prefs.getLong(KEY_LAST_UPDATE_CHECK, 0L))
+    val lastUpdateCheckTimestamp: StateFlow<Long> = _lastUpdateCheckTimestamp.asStateFlow()
+
     fun setOverlayEnabled(enabled: Boolean) {
         prefs.edit().putBoolean(KEY_OVERLAY_ENABLED, enabled).apply()
         _overlayEnabled.value = enabled
@@ -83,6 +92,21 @@ class SettingsRepository(context: Context) {
         _autoCopyTwoFa.value = enabled
     }
 
+    fun setAutoCheckUpdates(enabled: Boolean) {
+        prefs.edit().putBoolean(KEY_AUTO_CHECK_UPDATES, enabled).apply()
+        _autoCheckUpdates.value = enabled
+    }
+
+    fun setIncludeBetaUpdates(enabled: Boolean) {
+        prefs.edit().putBoolean(KEY_INCLUDE_BETA_UPDATES, enabled).apply()
+        _includeBetaUpdates.value = enabled
+    }
+
+    fun setLastUpdateCheckTimestamp(timestamp: Long) {
+        prefs.edit().putLong(KEY_LAST_UPDATE_CHECK, timestamp).apply()
+        _lastUpdateCheckTimestamp.value = timestamp
+    }
+
     companion object {
         private const val KEY_OVERLAY_ENABLED = "overlay_enabled"
         private const val KEY_OVERLAY_POS_RIGHT = "overlay_pos_right"
@@ -93,5 +117,8 @@ class SettingsRepository(context: Context) {
         private const val KEY_2FA_DIGITS = "2fa_digits"
         private const val KEY_2FA_PERIOD = "2fa_period"
         private const val KEY_AUTO_COPY_2FA = "auto_copy_2fa"
+        private const val KEY_AUTO_CHECK_UPDATES = "auto_check_updates"
+        private const val KEY_INCLUDE_BETA_UPDATES = "include_beta_updates"
+        private const val KEY_LAST_UPDATE_CHECK = "last_update_check"
     }
 }

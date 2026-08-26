@@ -38,9 +38,13 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -48,7 +52,12 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.data.model.UpdateState
 import com.example.service.FloatingOverlayService
+import com.example.ui.components.InstallPermissionDialog
+import com.example.ui.components.UpdateAvailableDialog
+import com.example.ui.components.UpdateDownloadingDialog
+import com.example.ui.components.UpdateErrorDialog
 import com.example.ui.home.HomeScreen
 import com.example.ui.mail.MailScreen
 import com.example.ui.name.NameScreen
@@ -124,7 +133,20 @@ class MainActivity : ComponentActivity() {
 
 @Composable
 fun MainAppContent() {
+    val app = TempMail2FAApp.instance
+    val coroutineScope = rememberCoroutineScope()
     var currentScreen by remember { mutableStateOf(Screen.HOME) }
+
+    val updateState by app.updateRepository.updateState.collectAsState()
+    val autoCheckUpdates by app.settingsRepository.autoCheckUpdates.collectAsState()
+    var dismissedUpdateVersion by rememberSaveable { mutableStateOf<String?>(null) }
+    var showInstallPermissionDialog by remember { mutableStateOf(false) }
+
+    LaunchedEffect(autoCheckUpdates) {
+        if (autoCheckUpdates) {
+            app.updateRepository.checkForUpdates(isManual = false)
+        }
+    }
 
     Scaffold(
         modifier = Modifier.fillMaxSize(),
@@ -200,5 +222,74 @@ fun MainAppContent() {
                 )
             }
         }
+    }
+
+    // Global In-App Update Dialogs
+    when (val state = updateState) {
+        is UpdateState.UpdateAvailable -> {
+            if (state.updateInfo.latestVersionName != dismissedUpdateVersion) {
+                UpdateAvailableDialog(
+                    updateInfo = state.updateInfo,
+                    onUpdateNow = {
+                        app.updateRepository.startDownload(
+                            scope = coroutineScope,
+                            updateInfo = state.updateInfo,
+                            onPermissionNeeded = { showInstallPermissionDialog = true }
+                        )
+                    },
+                    onDismiss = {
+                        dismissedUpdateVersion = state.updateInfo.latestVersionName
+                        app.updateRepository.dismissUpdate()
+                    }
+                )
+            }
+        }
+        is UpdateState.Downloading -> {
+            UpdateDownloadingDialog(
+                versionName = state.updateInfo.latestVersionName,
+                progressPercent = state.progressPercent,
+                bytesDownloaded = state.bytesDownloaded,
+                totalBytes = state.totalBytes,
+                isVerifying = false,
+                onCancel = { app.updateRepository.cancelDownload() }
+            )
+        }
+        is UpdateState.Verifying -> {
+            UpdateDownloadingDialog(
+                versionName = state.updateInfo.latestVersionName,
+                progressPercent = 100,
+                bytesDownloaded = state.updateInfo.apkSizeBytes,
+                totalBytes = state.updateInfo.apkSizeBytes,
+                isVerifying = true,
+                onCancel = { app.updateRepository.cancelDownload() }
+            )
+        }
+        is UpdateState.Error -> {
+            UpdateErrorDialog(
+                errorMessage = state.message,
+                canRetry = state.canRetry && state.failedUpdateInfo != null,
+                onRetry = {
+                    state.failedUpdateInfo?.let { info ->
+                        app.updateRepository.startDownload(
+                            scope = coroutineScope,
+                            updateInfo = info,
+                            onPermissionNeeded = { showInstallPermissionDialog = true }
+                        )
+                    }
+                },
+                onDismiss = { app.updateRepository.dismissUpdate() }
+            )
+        }
+        else -> {}
+    }
+
+    if (showInstallPermissionDialog) {
+        InstallPermissionDialog(
+            onOpenSettings = {
+                showInstallPermissionDialog = false
+                app.updateRepository.openInstallPermissionSettings()
+            },
+            onDismiss = { showInstallPermissionDialog = false }
+        )
     }
 }

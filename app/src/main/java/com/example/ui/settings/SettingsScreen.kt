@@ -23,16 +23,23 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.BugReport
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Dns
+import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Email
 import androidx.compose.material.icons.filled.Key
 import androidx.compose.material.icons.filled.Layers
 import androidx.compose.material.icons.filled.OpenInNew
 import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Security
+import androidx.compose.material.icons.filled.SystemUpdate
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -55,6 +62,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -63,9 +71,12 @@ import androidx.compose.ui.unit.sp
 import com.example.R
 import com.example.TempMail2FAApp
 import com.example.service.FloatingOverlayService
+import com.example.data.model.UpdateState
 import com.example.ui.components.AppCard
+import com.example.ui.components.InstallPermissionDialog
 import com.example.ui.components.SectionTitle
 import com.example.ui.mail.MailDiagnosticsDialog
+import com.example.ui.theme.StitchBlack
 import com.example.ui.theme.StitchGlassBorder
 import com.example.ui.theme.StitchGlassBorderSubtle
 import com.example.ui.theme.StitchGlassCardElevated
@@ -93,10 +104,15 @@ fun SettingsScreen(
     val autoCopyEmail by app.settingsRepository.autoCopyEmail.collectAsState()
     val autoCopyOtp by app.settingsRepository.autoCopyOtp.collectAsState()
     val autoCopyTwoFa by app.settingsRepository.autoCopyTwoFa.collectAsState()
+    val autoCheckUpdates by app.settingsRepository.autoCheckUpdates.collectAsState()
+    val includeBetaUpdates by app.settingsRepository.includeBetaUpdates.collectAsState()
+    val lastUpdateCheckTimestamp by app.settingsRepository.lastUpdateCheckTimestamp.collectAsState()
+    val updateState by app.updateRepository.updateState.collectAsState()
     val diagnostics by app.mailRepository.diagnostics.collectAsState()
 
     var showClearDialog by remember { mutableStateOf(false) }
     var showDiagnosticsDialog by remember { mutableStateOf(false) }
+    var showInstallPermissionDialog by remember { mutableStateOf(false) }
 
     val scrollState = rememberScrollState()
 
@@ -325,6 +341,200 @@ fun SettingsScreen(
             )
         }
 
+        // Section: Updates
+        SectionTitle(title = "Updates", subtitle = "GitHub release channel & auto-updater")
+
+        AppCard {
+            // Current version row
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "Current Version",
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.SemiBold,
+                    color = StitchTextPrimary
+                )
+                Text(
+                    text = "v30.2",
+                    style = MaterialTheme.typography.bodyMedium.copy(
+                        fontFamily = FontFamily.Monospace,
+                        fontWeight = FontWeight.Bold
+                    ),
+                    color = StitchTextPrimary
+                )
+            }
+
+            HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp), color = StitchGlassBorderSubtle)
+
+            // Last Checked row
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "Last Checked",
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.SemiBold,
+                    color = StitchTextPrimary
+                )
+                Text(
+                    text = if (lastUpdateCheckTimestamp > 0L) {
+                        java.text.SimpleDateFormat("MMM dd, HH:mm", java.util.Locale.getDefault()).format(java.util.Date(lastUpdateCheckTimestamp))
+                    } else {
+                        "Never"
+                    },
+                    style = MaterialTheme.typography.bodySmall,
+                    color = StitchTextSecondary
+                )
+            }
+
+            HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp), color = StitchGlassBorderSubtle)
+
+            // Automatic Update Checks switch
+            SettingSwitchRow(
+                icon = Icons.Default.Refresh,
+                title = "Automatic Update Checks",
+                subtitle = "Periodically check for new releases in background",
+                checked = autoCheckUpdates,
+                onCheckedChange = { app.settingsRepository.setAutoCheckUpdates(it) }
+            )
+
+            HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp), color = StitchGlassBorderSubtle)
+
+            // Include Beta Updates switch
+            SettingSwitchRow(
+                icon = Icons.Default.BugReport,
+                title = "Include Beta Updates",
+                subtitle = "Allow pre-release builds and preview versions",
+                checked = includeBetaUpdates,
+                onCheckedChange = { app.settingsRepository.setIncludeBetaUpdates(it) }
+            )
+
+            HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp), color = StitchGlassBorderSubtle)
+
+            // Check for Updates action button
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "Check for Updates",
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.SemiBold,
+                        color = StitchTextPrimary
+                    )
+                    Text(
+                        text = "MOMStealerV/NyxTap",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = StitchTextSecondary
+                    )
+                }
+
+                Button(
+                    onClick = {
+                        scope.launch {
+                            app.updateRepository.checkForUpdates(isManual = true)
+                        }
+                    },
+                    enabled = updateState !is UpdateState.Checking && updateState !is UpdateState.Downloading,
+                    shape = RoundedCornerShape(100.dp),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = StitchPillWhite,
+                        contentColor = StitchPillWhiteOn
+                    ),
+                    modifier = Modifier.testTag("check_updates_button")
+                ) {
+                    if (updateState is UpdateState.Checking) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(16.dp),
+                            strokeWidth = 2.dp,
+                            color = StitchPillWhiteOn
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("Checking...")
+                    } else {
+                        Icon(
+                            imageVector = Icons.Default.Refresh,
+                            contentDescription = null,
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("Check Now", fontWeight = FontWeight.Bold)
+                    }
+                }
+            }
+
+            // If update available or up to date, display status card
+            if (updateState is UpdateState.UpdateAvailable) {
+                val info = (updateState as UpdateState.UpdateAvailable).updateInfo
+                Spacer(modifier = Modifier.height(8.dp))
+                Surface(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(12.dp),
+                    color = StitchBlack.copy(alpha = 0.5f),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, StitchGreen.copy(alpha = 0.4f))
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(14.dp),
+                        verticalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column {
+                                Text(
+                                    text = "Update Available",
+                                    style = MaterialTheme.typography.titleSmall,
+                                    fontWeight = FontWeight.Bold,
+                                    color = StitchGreen
+                                )
+                                Text(
+                                    text = info.latestVersionName,
+                                    style = MaterialTheme.typography.bodyMedium.copy(fontFamily = FontFamily.Monospace),
+                                    color = StitchTextPrimary
+                                )
+                            }
+
+                            Button(
+                                onClick = {
+                                    app.updateRepository.startDownload(scope, info) {
+                                        showInstallPermissionDialog = true
+                                    }
+                                },
+                                shape = RoundedCornerShape(100.dp),
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = StitchGreenBadgeBg,
+                                    contentColor = StitchGreenBadgeText
+                                ),
+                                border = androidx.compose.foundation.BorderStroke(1.dp, StitchGreen.copy(alpha = 0.5f)),
+                                modifier = Modifier.testTag("settings_update_now_button")
+                            ) {
+                                Text("Update Now", fontWeight = FontWeight.Bold)
+                            }
+                        }
+                    }
+                }
+            } else if (updateState is UpdateState.UpToDate) {
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = "NyxTap is up to date (${(updateState as UpdateState.UpToDate).currentVersion})",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = StitchGreen,
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
+        }
+
         // Section: About & App Information
         SectionTitle(title = "About NyxTap", subtitle = "Application information & build details")
 
@@ -459,6 +669,16 @@ fun SettingsScreen(
     if (showDiagnosticsDialog) {
         MailDiagnosticsDialog(
             onDismissRequest = { showDiagnosticsDialog = false }
+        )
+    }
+
+    if (showInstallPermissionDialog) {
+        InstallPermissionDialog(
+            onOpenSettings = {
+                showInstallPermissionDialog = false
+                app.updateRepository.openInstallPermissionSettings()
+            },
+            onDismiss = { showInstallPermissionDialog = false }
         )
     }
 }
