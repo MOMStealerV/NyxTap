@@ -358,7 +358,7 @@ fun SettingsScreen(
                     color = StitchTextPrimary
                 )
                 Text(
-                    text = "v30.2",
+                    text = "v30.4",
                     style = MaterialTheme.typography.bodyMedium.copy(
                         fontFamily = FontFamily.Monospace,
                         fontWeight = FontWeight.Bold
@@ -577,9 +577,9 @@ fun SettingsScreen(
                             border = androidx.compose.foundation.BorderStroke(1.dp, StitchGlassBorderSubtle)
                         ) {
                             Text(
-                                text = "v30.2",
+                                text = "v30.4",
                                 style = MaterialTheme.typography.labelSmall.copy(
-                                    fontWeight = FontWeight.Bold
+                                     fontWeight = FontWeight.Bold
                                 ),
                                 color = StitchTextPrimary,
                                 modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)
@@ -630,7 +630,7 @@ fun SettingsScreen(
                     color = StitchTextPrimary
                 )
                 Text(
-                    text = "v30.2",
+                    text = "v30.4",
                     style = MaterialTheme.typography.bodyMedium.copy(
                         fontFamily = FontFamily.Monospace
                     ),

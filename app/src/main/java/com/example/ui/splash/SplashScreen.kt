@@ -167,7 +167,7 @@ fun SplashScreen(
                 verticalArrangement = Arrangement.spacedBy(4.dp)
             ) {
                 Text(
-                    text = "v30.2",
+                    text = "v30.4",
                     style = NyxTypography.DiagnosticValue.copy(
                         fontSize = 12.sp,
                         fontWeight = FontWeight.Medium
