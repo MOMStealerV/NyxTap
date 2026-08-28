@@ -2,6 +2,7 @@ package com.example.data.repository
 
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
 import android.provider.Settings
@@ -157,6 +158,7 @@ class UpdateRepository(
                         var apkSize: Long = 0L
                         var expectedSha: String? = VersionParser.extractSha256(releaseBody)
 
+                        var bestApkScore = -1
                         for (j in 0 until assetsArray.length()) {
                             val asset = assetsArray.getJSONObject(j)
                             val name = asset.optString("name", "")
@@ -164,9 +166,18 @@ class UpdateRepository(
                             val size = asset.optLong("size", 0L)
 
                             if (name.endsWith(".apk", ignoreCase = true)) {
-                                apkUrl = downloadUrl
-                                apkName = name
-                                apkSize = size
+                                var score = 1
+                                if (name.startsWith("NyxTap", ignoreCase = true)) score += 10
+                                if (name.contains("release", ignoreCase = true)) score += 5
+                                if (name.contains("universal", ignoreCase = true)) score += 2
+                                if (name.contains("debug", ignoreCase = true)) score -= 10
+
+                                if (score > bestApkScore) {
+                                    bestApkScore = score
+                                    apkUrl = downloadUrl
+                                    apkName = name
+                                    apkSize = size
+                                }
                             }
 
                             // Check if asset is a checksum file
@@ -339,6 +350,18 @@ class UpdateRepository(
                     }
                 }
 
+                // Verify that downloaded package is a valid Android APK matching installed app
+                val packageValidationError = validateDownloadedApk(targetFile, updateInfo.latestVersionCode)
+                if (packageValidationError != null) {
+                    targetFile.delete()
+                    _updateState.value = UpdateState.Error(
+                        message = packageValidationError,
+                        canRetry = false,
+                        failedUpdateInfo = updateInfo
+                    )
+                    return@launch
+                }
+
                 _updateState.value = UpdateState.ReadyToInstall(updateInfo, targetFile)
 
                 // Trigger package installation
@@ -434,5 +457,109 @@ class UpdateRepository(
             }
         }
         return digest.digest().joinToString("") { "%02x".format(it) }
+    }
+
+    /**
+     * Pre-validates that the downloaded file is a valid Android APK for this application,
+     * not a downgrade, and signed with a certificate compatible with the currently running app.
+     */
+    fun validateDownloadedApk(apkFile: File, expectedVersionCode: Int): String? {
+        return try {
+            val pm = context.packageManager
+            val flags = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                PackageManager.GET_SIGNING_CERTIFICATES
+            } else {
+                @Suppress("DEPRECATION")
+                PackageManager.GET_SIGNATURES
+            }
+
+            val archiveInfo = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                pm.getPackageArchiveInfo(apkFile.absolutePath, PackageManager.PackageInfoFlags.of(flags.toLong()))
+            } else {
+                @Suppress("DEPRECATION")
+                pm.getPackageArchiveInfo(apkFile.absolutePath, flags)
+            } ?: return "Downloaded APK is invalid or corrupt (cannot parse Android package)."
+
+            // 1. Verify applicationId / package name matches
+            if (archiveInfo.packageName != context.packageName) {
+                return "Package name mismatch: APK is for '${archiveInfo.packageName}', but installed app is '${context.packageName}'."
+            }
+
+            // 2. Verify versionCode is not a downgrade
+            val apkVersionCode = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                archiveInfo.longVersionCode.toInt()
+            } else {
+                @Suppress("DEPRECATION")
+                archiveInfo.versionCode
+            }
+
+            val currentVersionCode = try {
+                val curPkg = pm.getPackageInfo(context.packageName, 0)
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                    curPkg.longVersionCode.toInt()
+                } else {
+                    @Suppress("DEPRECATION")
+                    curPkg.versionCode
+                }
+            } catch (_: Exception) {
+                0
+            }
+
+            if (apkVersionCode < currentVersionCode) {
+                return "Cannot install downgrade: APK version ($apkVersionCode) is older than installed version ($currentVersionCode)."
+            }
+
+            // 3. Verify signing certificate matches the running app to prevent installation conflicts
+            val certificatesMatch = try {
+                val currentPkg = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                    pm.getPackageInfo(context.packageName, PackageManager.PackageInfoFlags.of(flags.toLong()))
+                } else {
+                    @Suppress("DEPRECATION")
+                    pm.getPackageInfo(context.packageName, flags)
+                }
+
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                    val apkCerts = archiveInfo.signingInfo?.signingCertificateHistory
+                        ?: archiveInfo.signingInfo?.apkContentsSigners
+                    val currentCerts = currentPkg.signingInfo?.signingCertificateHistory
+                        ?: currentPkg.signingInfo?.apkContentsSigners
+
+                    if (apkCerts != null && currentCerts != null && apkCerts.isNotEmpty() && currentCerts.isNotEmpty()) {
+                        apkCerts.any { apkCert ->
+                            currentCerts.any { curCert ->
+                                apkCert.toByteArray().contentEquals(curCert.toByteArray())
+                            }
+                        }
+                    } else {
+                        true // Fallback to OS installer if signingInfo is unavailable in userspace
+                    }
+                } else {
+                    @Suppress("DEPRECATION")
+                    val apkSigs = archiveInfo.signatures
+                    @Suppress("DEPRECATION")
+                    val currentSigs = currentPkg.signatures
+
+                    if (apkSigs != null && currentSigs != null && apkSigs.isNotEmpty() && currentSigs.isNotEmpty()) {
+                        apkSigs.any { apkSig ->
+                            currentSigs.any { curSig ->
+                                apkSig.toByteArray().contentEquals(curSig.toByteArray())
+                            }
+                        }
+                    } else {
+                        true
+                    }
+                }
+            } catch (_: Exception) {
+                true // Allow installer to verify if reflection/inspection fails
+            }
+
+            if (!certificatesMatch) {
+                return "Signature mismatch: APK is signed with a conflicting key. Update refused to prevent installation failure."
+            }
+
+            null // Validation successful
+        } catch (e: Exception) {
+            "Failed to validate APK package: ${e.localizedMessage}"
+        }
     }
 }

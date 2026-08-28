@@ -14,6 +14,7 @@ class UpdateSystemUnitTest {
     fun testVersionParserWithStandardSemver() {
         assertEquals(302, VersionParser.parseVersionCode("v30.2"))
         assertEquals(303, VersionParser.parseVersionCode("v30.3"))
+        assertEquals(304, VersionParser.parseVersionCode("v30.4"))
         assertEquals(310, VersionParser.parseVersionCode("v31.0"))
         assertEquals(311, VersionParser.parseVersionCode("31.1"))
     }
