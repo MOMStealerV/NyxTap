@@ -1,84 +1,89 @@
 package com.example.util
 
-import android.content.ClipData
-import android.content.ClipDescription
-import android.content.ClipboardManager
 import android.content.Context
-import android.os.Build
-import android.os.PersistableBundle
+import kotlinx.coroutines.flow.StateFlow
 
-class AppClipboardManager(private val context: Context) {
+/**
+ * High-level Clipboard Manager implementing ClipboardManagerClient.
+ * Applies the LoggingClipboardDecorator to log all secret reads/writes,
+ * verify permission consistency (overlay and background restrictions),
+ * and track app lifecycle states.
+ */
+class AppClipboardManager(
+    private val context: Context,
+    lifecycleTracker: AppLifecycleTracker = AppLifecycleTracker
+) : ClipboardManagerClient {
 
-    private val clipboard: ClipboardManager? =
-        context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
+    private val decorator: LoggingClipboardDecorator = LoggingClipboardDecorator(
+        delegate = SystemClipboardManagerImpl(context),
+        context = context,
+        lifecycleTracker = lifecycleTracker
+    )
+
+    val auditLogsFlow: StateFlow<List<ClipboardAuditLog>> get() = decorator.auditLogsFlow
 
     /**
      * Copies temporary email to clipboard.
      */
-    fun copyEmail(email: String): Boolean {
-        if (email.isBlank() || clipboard == null) return false
-        val clip = ClipData.newPlainText("Temporary Email", email)
-        clipboard.setPrimaryClip(clip)
-        return true
+    override fun copyEmail(email: String, callerContext: String): Boolean {
+        return decorator.copyEmail(email, callerContext)
     }
+
+    fun copyEmail(email: String): Boolean = copyEmail(email, "App")
 
     /**
      * Copies OTP verification code to clipboard with sensitive marking.
      */
-    fun copyOtp(otp: String): Boolean {
-        if (otp.isBlank() || clipboard == null) return false
-        val clip = ClipData.newPlainText("Verification Code", otp)
-        applySensitiveFlag(clip)
-        clipboard.setPrimaryClip(clip)
-        return true
+    override fun copyOtp(otp: String, callerContext: String): Boolean {
+        return decorator.copyOtp(otp, callerContext)
     }
+
+    fun copyOtp(otp: String): Boolean = copyOtp(otp, "App")
 
     /**
      * Copies TOTP 6-digit code to clipboard with sensitive marking.
      */
-    fun copyTotp(code: String): Boolean {
-        if (code.isBlank() || clipboard == null) return false
-        val clip = ClipData.newPlainText("2FA Code", code)
-        applySensitiveFlag(clip)
-        clipboard.setPrimaryClip(clip)
-        return true
+    override fun copyTotp(code: String, callerContext: String): Boolean {
+        return decorator.copyTotp(code, callerContext)
     }
+
+    fun copyTotp(code: String): Boolean = copyTotp(code, "App")
 
     /**
      * Copies plain text (e.g. Generated Name) to clipboard.
      */
-    fun copyPlainText(label: String, text: String): Boolean {
-        if (text.isBlank() || clipboard == null) return false
-        val clip = ClipData.newPlainText(label, text)
-        clipboard.setPrimaryClip(clip)
-        return true
+    override fun copyPlainText(label: String, text: String, callerContext: String): Boolean {
+        return decorator.copyPlainText(label, text, callerContext)
     }
+
+    fun copyPlainText(label: String, text: String): Boolean = copyPlainText(label, text, "App")
 
     /**
      * Reads clipboard text when user explicitly taps 2FA.
      * Sanitizes and validates Base32 or otpauth:// format.
      */
-    fun readTotpSecret(): String? {
-        val text = readPrimaryClipText() ?: return null
-        return when (val result = TotpGenerator.parseAndValidateSecret(text)) {
-            is TotpParseResult.Success -> result.secret
-            is TotpParseResult.Failure -> null
-        }
+    override fun readTotpSecret(callerContext: String): String? {
+        return decorator.readTotpSecret(callerContext)
     }
 
-    fun readPrimaryClipText(): String? {
-        if (clipboard == null || !clipboard.hasPrimaryClip()) return null
-        val clip = clipboard.primaryClip ?: return null
-        if (clip.itemCount == 0) return null
-        return clip.getItemAt(0)?.text?.toString()
+    fun readTotpSecret(): String? = readTotpSecret("App")
+
+    override fun readPrimaryClipText(callerContext: String): String? {
+        return decorator.readPrimaryClipText(callerContext)
     }
 
-    private fun applySensitiveFlag(clip: ClipData) {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            val extras = PersistableBundle().apply {
-                putBoolean(ClipDescription.EXTRA_IS_SENSITIVE, true)
-            }
-            clip.description.extras = extras
-        }
+    fun readPrimaryClipText(): String? = readPrimaryClipText("App")
+
+    override fun hasPrimaryClip(): Boolean {
+        return decorator.hasPrimaryClip()
+    }
+
+    override fun getAuditLogs(): List<ClipboardAuditLog> {
+        return decorator.getAuditLogs()
+    }
+
+    override fun clearAuditLogs() {
+        decorator.clearAuditLogs()
     }
 }
+

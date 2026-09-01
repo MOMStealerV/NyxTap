@@ -40,12 +40,12 @@ class TwoFaRepository(
      * Reads clipboard secret directly upon explicit user action, computes current TOTP,
      * auto-copies code to clipboard, and starts ticker updates.
      */
-    fun generateFromClipboard(): Result<TotpResult> {
-        val rawText = clipboardManager.readPrimaryClipText()
+    fun generateFromClipboard(callerContext: String = "App"): Result<TotpResult> {
+        val rawText = clipboardManager.readPrimaryClipText(callerContext = callerContext)
         val parseResult = TotpGenerator.parseAndValidateSecret(rawText)
         return when (parseResult) {
             is TotpParseResult.Success -> {
-                generateFromCleanSecret(parseResult.secret)
+                generateFromCleanSecret(parseResult.secret, callerContext = callerContext)
             }
             is TotpParseResult.Failure -> {
                 Result.failure(IllegalArgumentException(parseResult.errorMessage))
@@ -56,11 +56,11 @@ class TwoFaRepository(
     /**
      * Generates TOTP from explicit secret string.
      */
-    fun generateFromSecret(secret: String): Result<TotpResult> {
+    fun generateFromSecret(secret: String, callerContext: String = "App"): Result<TotpResult> {
         val parseResult = TotpGenerator.parseAndValidateSecret(secret)
         return when (parseResult) {
             is TotpParseResult.Success -> {
-                generateFromCleanSecret(parseResult.secret)
+                generateFromCleanSecret(parseResult.secret, callerContext = callerContext)
             }
             is TotpParseResult.Failure -> {
                 Result.failure(IllegalArgumentException(parseResult.errorMessage))
@@ -68,14 +68,14 @@ class TwoFaRepository(
         }
     }
 
-    private fun generateFromCleanSecret(cleanSecret: String): Result<TotpResult> {
+    private fun generateFromCleanSecret(cleanSecret: String, callerContext: String = "App"): Result<TotpResult> {
         return try {
             activeSecret = cleanSecret
             val result = calculateCurrentTotp(cleanSecret)
             _currentTotp.value = result
 
             if (autoCopyCode) {
-                clipboardManager.copyTotp(result.code)
+                clipboardManager.copyTotp(result.code, callerContext = callerContext)
                 _lastCopiedFeedback.value = "✓ Code ${result.code} copied"
             }
 

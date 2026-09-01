@@ -141,7 +141,7 @@ class MailRepository(
             )
 
             if (autoCopyEmail) {
-                clipboardManager.copyEmail(email)
+                clipboardManager.copyEmail(email, callerContext = "MailRepository")
             }
 
             // Start active monitoring for 10 minutes with pristine state
@@ -292,7 +292,7 @@ class MailRepository(
                                         )
 
                                         if (autoCopyOtp) {
-                                            clipboardManager.copyOtp(otp)
+                                            clipboardManager.copyOtp(otp, callerContext = "MailRepository")
                                         }
                                         _latestOtpEvent.tryEmit(Pair(targetEmail, otp))
                                         return@launch // Stop polling immediately on code detection
@@ -454,7 +454,7 @@ class MailRepository(
 
                                     messages.forEach { seenEmailIds.add(it.id) }
                                     if (autoCopyOtp) {
-                                        clipboardManager.copyOtp(otp)
+                                        clipboardManager.copyOtp(otp, callerContext = "MailRepository")
                                     }
                                     _latestOtpEvent.tryEmit(Pair(email, otp))
                                     monitoringJob?.cancel()

@@ -68,6 +68,7 @@ class FloatingOverlayService : Service(), LifecycleOwner, ViewModelStoreOwner, S
 
     override fun onCreate() {
         super.onCreate()
+        com.example.util.AppLifecycleTracker.setOverlayServiceRunning(true)
         savedStateRegistryController.performRestore(null)
         lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_CREATE)
         lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_START)
@@ -164,13 +165,13 @@ class FloatingOverlayService : Service(), LifecycleOwner, ViewModelStoreOwner, S
                             app.mailRepository.checkForOtpNow()
                         },
                         onGenerateTwoFaFromClipboard = {
-                            app.twoFaRepository.generateFromClipboard()
+                            app.twoFaRepository.generateFromClipboard(callerContext = "FloatingOverlay")
                         },
                         onCopyEmail = { email ->
-                            app.clipboardManager.copyEmail(email)
+                            app.clipboardManager.copyEmail(email, callerContext = "FloatingOverlay")
                         },
                         onCopyOtp = { otp ->
-                            app.clipboardManager.copyOtp(otp)
+                            app.clipboardManager.copyOtp(otp, callerContext = "FloatingOverlay")
                         },
                         onCloseOverlay = {
                             app.settingsRepository.setOverlayEnabled(false)
@@ -301,6 +302,7 @@ class FloatingOverlayService : Service(), LifecycleOwner, ViewModelStoreOwner, S
     }
 
     override fun onDestroy() {
+        com.example.util.AppLifecycleTracker.setOverlayServiceRunning(false)
         lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_PAUSE)
         lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_STOP)
         lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_DESTROY)

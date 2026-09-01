@@ -17,8 +17,8 @@ android {
     applicationId = "com.aistudio.tempmail2fa.qkveam"
     minSdk = 24
     targetSdk = 36
-    versionCode = 304
-    versionName = "v30.4"
+    versionCode = 305
+    versionName = "v30.5"
 
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
   }

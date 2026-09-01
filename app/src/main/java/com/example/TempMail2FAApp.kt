@@ -35,7 +35,8 @@ class TempMail2FAApp : Application() {
         super.onCreate()
         instance = this
 
-        clipboardManager = AppClipboardManager(this)
+        registerActivityLifecycleCallbacks(com.example.util.AppLifecycleTracker)
+        clipboardManager = AppClipboardManager(this, com.example.util.AppLifecycleTracker)
         settingsRepository = SettingsRepository(this)
         updateRepository = UpdateRepository(this, settingsRepository)
         database = AppDatabase.getDatabase(this)

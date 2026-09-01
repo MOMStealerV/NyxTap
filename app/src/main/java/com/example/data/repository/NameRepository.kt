@@ -34,7 +34,7 @@ class NameRepository(
         _currentName.value = generated
 
         if (autoCopy) {
-            clipboardManager.copyPlainText("Generated Name", generated.copiedText)
+            clipboardManager.copyPlainText("Generated Name", generated.copiedText, callerContext = "NameRepository")
         }
 
         return generated
